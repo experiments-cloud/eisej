@@ -79,7 +79,7 @@ def extract_commits():
     # --- Resume: load what was already extracted, if any ---
     if os.path.exists(TRACE_FILE):
         trace_rows = pd.read_csv(TRACE_FILE).to_dict('records')
-        done_months = {(r['repo'], r['mes']) for r in trace_rows}
+        done_months = {(r['repo'], r['month']) for r in trace_rows}
     else:
         trace_rows = []
         done_months = set()
@@ -188,13 +188,13 @@ def extract_commits():
 
             trace_rows.append({
                 'repo': repo,
-                'mes': m_start.strftime('%Y-%m'),
-                'candidatos_vistos': len(candidates) + bots_excluded + junk_excluded,
-                'excluidos_bot': bots_excluded,
-                'excluidos_junk': junk_excluded,
-                'candidatos_validos': len(candidates),
-                'muestreados': len(sample),
-                'incluidos_final': included,
+                'month': m_start.strftime('%Y-%m'),
+                'candidates_seen': len(candidates) + bots_excluded + junk_excluded,
+                'excluded_bots': bots_excluded,
+                'excluded_junk': junk_excluded,
+                'valid_candidates': len(candidates),
+                'sampled': len(sample),
+                'included_final': included,
             })
             print(f"   {m_start.strftime('%Y-%m')}: {included} included "
                   f"(valid: {len(candidates)}, bots: {bots_excluded}, junk: {junk_excluded})")

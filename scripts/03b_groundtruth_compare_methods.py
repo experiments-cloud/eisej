@@ -68,13 +68,26 @@ grp_iso_lo = win_df[~win_df['iso_anomaly']]
 u_iso, p_iso = mannwhitneyu(grp_iso_hi['is_fix_rate'], grp_iso_lo['is_fix_rate'], alternative='two-sided')
 print(f"  fix_rate anomalous={grp_iso_hi['is_fix_rate'].mean():.3f} vs normal={grp_iso_lo['is_fix_rate'].mean():.3f} | p={p_iso:.2e}")
 
-# Sensitivity: Isolation Forest stability across seeds
-iso_seed_props = []
+# Sensitivity: Isolation Forest membership stability across seeds.
+# NOTE: comparing only the PROPORTION flagged across seeds is trivially
+# stable, since `contamination=0.15` forces that exact size regardless of
+# the seed. The real robustness check is whether the SAME windows get
+# flagged -- measured here via the Jaccard index of set membership between
+# every pair of seeds (this is the 'jaccard_stability' figure reported in
+# the paper's Table 5, J=0.867).
+iso_seed_sets = []
 for seed in [0, 1, 7, 42, 123]:
     iso_s = IsolationForest(contamination=0.15, random_state=seed, n_estimators=200)
     labels = iso_s.fit_predict(X_scaled) == -1
-    iso_seed_props.append(labels.mean())
-print(f"  Cross-seed stability: mean={np.mean(iso_seed_props)*100:.2f}%, std={np.std(iso_seed_props)*100:.2f}pp")
+    iso_seed_sets.append(set(np.where(labels)[0]))
+
+jaccard_pairs = []
+for i in range(len(iso_seed_sets)):
+    for j in range(i + 1, len(iso_seed_sets)):
+        a, b = iso_seed_sets[i], iso_seed_sets[j]
+        jaccard_pairs.append(len(a & b) / len(a | b))
+jaccard_stability = np.mean(jaccard_pairs)
+print(f"  Cross-seed membership stability (mean pairwise Jaccard): {jaccard_stability:.3f}")
 
 # ==========================================
 # APPROACH B2: GAUSSIAN MIXTURE MODEL (free covariance -> allows unequal cluster sizes)
@@ -116,8 +129,8 @@ print(f"  Jaccard (IsolationForest vs GMM): {j_iso_gmm:.3f}")
 # ==========================================
 print("\n=== ROBUSTNESS COMPARISON TABLE ===")
 comparison = pd.DataFrame({
-    'metodo': ['A: percentile 15%', 'B1: Isolation Forest', 'B2: GMM (k=2, full cov)'],
-    'proporcion_pct': [
+    'method': ['Percentile 15%', 'Isolation Forest', 'GMM (k=2, full cov.)'],
+    'proportion_pct': [
         win_df['high_risk_p15'].mean() * 100,
         win_df['iso_anomaly'].mean() * 100,
         win_df['gmm_anomaly'].mean() * 100,
@@ -128,7 +141,7 @@ comparison = pd.DataFrame({
         grp_gmm_hi['is_fix_rate'].mean() - grp_gmm_lo['is_fix_rate'].mean(),
     ],
     'p_value': [results['A_p15_pvalue'], p_iso, p_gmm],
-    'estabilidad_semillas_std_pp': [np.nan, np.std(iso_seed_props)*100, np.nan],
+    'jaccard_stability': [np.nan, jaccard_stability, np.nan],
 })
 print(comparison.to_string(index=False))
 
@@ -138,6 +151,6 @@ print(comparison.to_string(index=False))
 # Isolation Forest (approach B1) is selected as the final ground truth
 # method for the paper -- see Table "groundtruth" in Section 3.4.
 win_df.to_parquet('data/processed/github_windows_groundtruth.parquet', index=False)
-comparison.to_csv('data/processed/fase3_comparacion_metodos_final.csv', index=False)
+comparison.to_csv('data/processed/groundtruth_method_comparison.csv', index=False)
 pd.Series(results).to_csv('data/processed/fase3_trace_enfoqueA.csv', header=['valor'])
-print("\nSaved: github_windows_groundtruth.parquet, fase3_comparacion_metodos_final.csv, fase3_trace_enfoqueA.csv")
+print("\nSaved: github_windows_groundtruth.parquet, groundtruth_method_comparison.csv, fase3_trace_enfoqueA.csv")

@@ -176,8 +176,8 @@ print(f"McNemar statistic: {mc.statistic:.4f}, p-value: {mc.pvalue:.6f}")
 
 print(f"\nGlobal OOF accuracy -> RF: {accuracy_score(y, oof_rf_preds):.4f} | LSTM: {accuracy_score(y, oof_lstm_preds):.4f}")
 
-results_df.to_csv('data/processed/fase5_cv_resultados.csv', index=False)
-np.savez('data/processed/fase5_oof_predictions.npz',
+results_df.to_csv('data/processed/oracle_cv_results.csv', index=False)
+np.savez('data/processed/oracle_oof_predictions.npz',
          y_true=y, oof_rf=oof_rf_preds, oof_lstm=oof_lstm_preds)
 trace5 = {
     'n_folds': N_FOLDS,
@@ -188,5 +188,5 @@ trace5 = {
     'mcnemar_oof_statistic': mc.statistic, 'mcnemar_oof_pvalue': mc.pvalue,
     'oof_accuracy_rf': accuracy_score(y, oof_rf_preds), 'oof_accuracy_lstm': accuracy_score(y, oof_lstm_preds),
 }
-pd.Series(trace5).to_csv('data/processed/fase5_cv_trace.csv', header=['valor'])
-print("\nSaved: fase5_cv_resultados.csv, fase5_cv_trace.csv")
+pd.Series(trace5).to_csv('data/processed/oracle_cv_trace.csv', header=['value'])
+print("\nSaved: oracle_cv_results.csv, oracle_cv_trace.csv")

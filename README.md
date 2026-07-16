@@ -11,20 +11,24 @@ submitted to e-Informatica Software Engineering Journal.
 ```
 eisej/
 ├── scripts/
-│   ├── 01_extract_5repos.py                    # Sec. 3.1 — react, tensorflow, vscode, linux, bitcoin
-│   ├── 01b_extract_2repos_community.py         # Sec. 3.1 — neovim, svelte
+│   ├── 01_extract_5repos.py                  # Sec. 3.1 — react, tensorflow, vscode, linux, bitcoin
+│   ├── 01b_extract_2repos_community.py        # Sec. 3.1 — neovim, svelte
 │   ├── 02_clean_and_feature_engineer.py        # Sec. 3.2, 3.3
 │   ├── 03_groundtruth_windows.py               # Sec. 3.4 (windowing + aggregation)
 │   ├── 03b_groundtruth_compare_methods.py      # Sec. 3.4 (percentile / Isolation Forest / GMM comparison)
 │   ├── 04_trait_state_stability.py             # Sec. 3.6, 4.2
 │   ├── 05_oracle_modeling_cv.py                # Sec. 3.7, 4.3
+│   ├── figures/                                # Scripts that generate Figures 1-6 in the paper
 │   └── exploratory_superseded/                 # Discarded methodological attempts,
-│                                               #   documented in the paper (Sec. 3.4, 3.7)
-│                                               #   as part of the correction process.
-│                                               #   NOT part of the final pipeline.
+│                                                #   documented in the paper (Sec. 3.4, 3.7)
+│                                                #   as part of the correction process.
+│                                                #   NOT part of the final pipeline.
 ├── data/
 │   ├── raw/                                    # Output of 01 + 01b
 │   └── processed/                              # Output of 02, 03, 03b, 04, 05
+├── paper/
+│   ├── eisej_paper.tex
+│   └── eisej_paper.bib
 └── requirements.txt
 ```
 
@@ -77,8 +81,8 @@ than as part of the final pipeline:
 | `raw/github_raw_final.parquet` | 21,638 | Raw commits after bot/spurious-identity filtering at extraction time |
 | `processed/github_features_final.parquet` | 17,428 | Cleaned corpus with the features described in Section 3.3 |
 | `processed/github_windows_groundtruth.parquet` | 15,564 | 5-commit windows with Isolation Forest labels |
-| `processed/fase4_author_profiles.parquet` | 238 | Per-author temporal stability profiles |
-| `processed/fase5_oof_predictions.npz` | 15,098 | Out-of-fold predictions (RF and LSTM) underlying Table 9 and Figures 4-5 |
+| `processed/trait_state_author_profiles.parquet` | 238 | Per-author temporal stability profiles |
+| `processed/oracle_oof_predictions.npz` | 15,098 | Out-of-fold predictions (RF and LSTM) underlying Table 9 and Figures 4-5 |
 
 ## Data NOT included
 
@@ -86,3 +90,9 @@ The full text content of commit messages is retained in the parquet files
 (`commit_message`) as extracted from the public GitHub API, subject to
 GitHub's terms of service. `author_id` was not anonymized, as it corresponds
 to usernames already public in public repositories.
+
+## License and citation
+
+[Pending: add repository license (e.g., MIT for code, CC-BY 4.0 for data,
+consistent with EISEJ's open data policy) and the paper's citation format
+once a DOI is assigned].

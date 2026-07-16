@@ -5,10 +5,8 @@ windows (Isolation Forest) are (a) persistent and spread across their whole
 history -> STABLE TRAIT, or (b) concentrated in a bounded time episode ->
 EMERGENT STATE (a defensible early-warning signal).
 
-Note: the 'clasificacion' column values ('rasgo_estable', 'estado_emergente',
-'mixto') are kept in Spanish to stay consistent with the already-released
-data/processed/fase4_clasificacion_rasgo_estado.csv file. They correspond to
-"stable_trait" / "emergent_state" / "mixed" as used in the paper text.
+Output column names and category values are in English, matching the
+released trait_state_classification.csv / trait_state_trace.csv files.
 """
 import pandas as pd
 import numpy as np
@@ -72,21 +70,21 @@ def classify(row):
     high_rate = row['anomaly_rate'] >= rate_median
     high_entropy = row['temporal_entropy_norm'] >= entropy_median
     if high_rate and high_entropy:
-        return 'rasgo_estable'       # persistent and spread out in time -> "stable trait"
+        return 'stable_trait'        # persistent and spread out in time
     elif not high_rate and not high_entropy:
-        return 'estado_emergente'    # infrequent and concentrated in one episode -> "emergent state"
+        return 'emergent_state'      # infrequent and concentrated in one episode
     else:
-        return 'mixto'               # "mixed"
+        return 'mixed'
 
-has_signal['clasificacion'] = has_signal.apply(classify, axis=1)
+has_signal['classification'] = has_signal.apply(classify, axis=1)
 
 print("\n=== Classification thresholds (medians) ===")
 print(f"anomaly_rate median: {rate_median:.3f}")
 print(f"temporal_entropy_norm median: {entropy_median:.3f}")
 
 print("\n=== Classification distribution (authors with >=2 anomalous windows) ===")
-print(has_signal['clasificacion'].value_counts())
-print(has_signal['clasificacion'].value_counts(normalize=True) * 100)
+print(has_signal['classification'].value_counts())
+print(has_signal['classification'].value_counts(normalize=True) * 100)
 
 n_sin_senal = (prof_df['n_anomalous'] < 2).sum()
 print(f"\nAuthors without sufficient signal (<2 anomalous windows): {n_sin_senal} / {len(prof_df)}")
@@ -120,23 +118,23 @@ print("lag-1 figure above is reported alongside it specifically to make the")
 print("magnitude of the window-overlap artifact visible (Section 4.2).")
 
 print("\n=== Average profile by classification ===")
-print(has_signal.groupby('clasificacion')[['n_windows', 'anomaly_rate', 'temporal_entropy_norm', 'autocorr_risk_lag1']].mean())
+print(has_signal.groupby('classification')[['n_windows', 'anomaly_rate', 'temporal_entropy_norm', 'autocorr_risk_lag1']].mean())
 
 # ==========================================
 # SAVE
 # ==========================================
-prof_df.to_parquet('data/processed/fase4_author_profiles.parquet', index=False)
-has_signal.to_csv('data/processed/fase4_clasificacion_rasgo_estado.csv', index=False)
+prof_df.to_parquet('data/processed/trait_state_author_profiles.parquet', index=False)
+has_signal.to_csv('data/processed/trait_state_classification.csv', index=False)
 
 trace4 = {
-    'autores_elegibles_perfil': len(eligible_authors),
-    'autores_con_senal_suficiente': len(has_signal),
-    'autores_sin_senal': n_sin_senal,
-    'pct_rasgo_estable': (has_signal['clasificacion'] == 'rasgo_estable').mean() * 100,
-    'pct_estado_emergente': (has_signal['clasificacion'] == 'estado_emergente').mean() * 100,
-    'pct_mixto': (has_signal['clasificacion'] == 'mixto').mean() * 100,
-    'autocorr_lag1_mediana': prof_df['autocorr_risk_lag1'].median(),
-    'pct_autocorr_positiva_significativa': (prof_df['autocorr_risk_lag1'] > 0.2).mean() * 100,
+    'authors_eligible_profile': len(eligible_authors),
+    'authors_sufficient_signal': len(has_signal),
+    'authors_no_signal': n_sin_senal,
+    'pct_stable_trait': (has_signal['classification'] == 'stable_trait').mean() * 100,
+    'pct_emergent_state': (has_signal['classification'] == 'emergent_state').mean() * 100,
+    'pct_mixed': (has_signal['classification'] == 'mixed').mean() * 100,
+    'autocorr_lag1_median': prof_df['autocorr_risk_lag1'].median(),
+    'pct_autocorr_positive_significant': (prof_df['autocorr_risk_lag1'] > 0.2).mean() * 100,
 }
-pd.Series(trace4).to_csv('data/processed/fase4_trace.csv', header=['valor'])
-print("\nSaved: fase4_author_profiles.parquet, fase4_clasificacion_rasgo_estado.csv, fase4_trace.csv")
+pd.Series(trace4).to_csv('data/processed/trait_state_trace.csv', header=['value'])
+print("\nSaved: trait_state_author_profiles.parquet, trait_state_classification.csv, trait_state_trace.csv")

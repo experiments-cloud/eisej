@@ -1,4 +1,4 @@
-repo,mes,candidatos_vistos,excluidos_bot,excluidos_junk,candidatos_validos,muestreados,incluidos_final
+repo,month,candidates_seen,excluded_bots,excluded_junk,valid_candidates,sampled,included_final
 facebook/react,2025-01,124,0,0,124,124,124
 facebook/react,2025-02,86,1,0,85,85,85
 facebook/react,2025-03,173,1,0,172,172,172

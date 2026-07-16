@@ -8,9 +8,8 @@ Repos: facebook/react, tensorflow/tensorflow, microsoft/vscode,
        torvalds/linux, bitcoin/bitcoin
 Window: 2025-01-01 to 2026-07-14, stratified sampling by calendar month.
 
-Note: internal DataFrame/CSV column names (e.g. 'mes', 'candidatos_vistos',
-'excluidos_bot') are kept as originally produced, to stay consistent with
-the already-released data files in data/raw/.
+Note: internal DataFrame/CSV column names are in English, matching the
+released data/raw/extraction_trace_final.csv file.
 """
 import requests
 import pandas as pd
@@ -87,7 +86,7 @@ def extract_commits():
     # --- Safe resume: skip months already fully processed ---
     if os.path.exists(TRACE_FILE):
         trace_rows = pd.read_csv(TRACE_FILE).to_dict('records')
-        done_months = {(r['repo'], r['mes']) for r in trace_rows}
+        done_months = {(r['repo'], r['month']) for r in trace_rows}
     else:
         trace_rows = []
         done_months = set()
@@ -193,11 +192,11 @@ def extract_commits():
                 included += 1
 
             trace_rows.append({
-                'repo': repo, 'mes': mes_str,
-                'candidatos_vistos': len(candidates) + bots_excluded + junk_excluded,
-                'excluidos_bot': bots_excluded, 'excluidos_junk': junk_excluded,
-                'candidatos_validos': len(candidates), 'muestreados': len(sample),
-                'incluidos_final': included,
+                'repo': repo, 'month': mes_str,
+                'candidates_seen': len(candidates) + bots_excluded + junk_excluded,
+                'excluded_bots': bots_excluded, 'excluded_junk': junk_excluded,
+                'valid_candidates': len(candidates), 'sampled': len(sample),
+                'included_final': included,
             })
             print(f"   {mes_str}: {included} included "
                   f"(valid: {len(candidates)}, bots: {bots_excluded}, junk: {junk_excluded})")

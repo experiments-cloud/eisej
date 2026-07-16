@@ -1,0 +1,12 @@
+,value
+commits_extracted,21638.0
+authors_extracted,2573.0
+excluded_explicit_ai_signal,592.0
+excluded_zero_churn,21.0
+excluded_extreme_churn,211.0
+extreme_churn_threshold_lines,4025.0
+commits_post_churn_cleaning,20814.0
+authors_excluded_low_activity,2073.0
+commits_excluded_insufficient_author,3386.0
+commits_final_phase1,17428.0
+authors_final_phase1,466.0
