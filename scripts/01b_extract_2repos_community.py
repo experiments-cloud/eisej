@@ -1,3 +1,10 @@
+"""
+01b_extract_2repos_community.py
+Month-stratified extraction of the 2 community-governed repositories
+(neovim, svelte), added to diversify the corpus beyond high-visibility
+corporate/critical-infrastructure projects. Same method as
+01_extract_5repos.py; resumable.
+"""
 import requests
 import pandas as pd
 import time
@@ -6,8 +13,7 @@ import re
 import random
 from datetime import datetime
 
-with open('/home/claude/.gh_token') as f:
-    GITHUB_TOKEN = f.read().strip()
+GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', 'YOUR_TOKEN_HERE')
 
 REPOSITORIES = [
     'neovim/neovim',
@@ -19,8 +25,8 @@ WINDOW_END = datetime(2026, 7, 14)
 
 TARGET_PER_REPO_MONTH = 200
 CANDIDATE_CAP_PER_MONTH = 800
-OUTPUT_FILE = 'data/github_raw_v3b.parquet'
-TRACE_FILE = 'data/extraction_trace_v3b.csv'
+OUTPUT_FILE = 'data/raw/github_raw_v3b.parquet'
+TRACE_FILE = 'data/raw/extraction_trace_v3b.csv'
 CHECKPOINT_EVERY = 50
 
 HEADERS = {
@@ -34,26 +40,30 @@ BOT_PATTERNS = re.compile(
 )
 JUNK_PATTERN = re.compile(r'[~`\*\#\}\{\+\|\&\^\_\$]{2,}')
 
+
 def check_rate_limit(response):
     if response.status_code == 403 and 'X-RateLimit-Remaining' in response.headers:
         if int(response.headers['X-RateLimit-Remaining']) == 0:
             reset_time = int(response.headers['X-RateLimit-Reset'])
             sleep_time = max(0, reset_time - int(time.time())) + 10
-            print(f"\n⚠️ Límite de API alcanzado. Durmiendo {sleep_time / 60:.1f} min...")
+            print(f"\n[!] API rate limit reached. Sleeping {sleep_time / 60:.1f} min...")
             time.sleep(sleep_time)
-            print("🔄 Reanudando...")
+            print("Resuming...")
             return True
     return False
+
 
 def is_bot(login, name, email):
     candidates = [login or '', name or '', email or '']
     return any(BOT_PATTERNS.search(c) for c in candidates)
+
 
 def is_junk_identity(login, name, email):
     for c in [login, name, email]:
         if c and JUNK_PATTERN.search(c):
             return True
     return False
+
 
 def month_ranges(start, end):
     cur = datetime(start.year, start.month, 1)
@@ -62,10 +72,11 @@ def month_ranges(start, end):
         yield (max(cur, start), min(nxt, end))
         cur = nxt
 
-def extract_commits():
-    os.makedirs('data', exist_ok=True)
 
-    # --- Reanudación: cargar lo ya extraído si existe ---
+def extract_commits():
+    os.makedirs('data/raw', exist_ok=True)
+
+    # --- Resume: load what was already extracted, if any ---
     if os.path.exists(TRACE_FILE):
         trace_rows = pd.read_csv(TRACE_FILE).to_dict('records')
         done_months = {(r['repo'], r['mes']) for r in trace_rows}
@@ -76,24 +87,24 @@ def extract_commits():
     if os.path.exists(OUTPUT_FILE):
         existing_df = pd.read_parquet(OUTPUT_FILE)
         existing_df['ym'] = pd.to_datetime(existing_df['date'].str[:19]).dt.strftime('%Y-%m')
-        # Descartar filas de meses que NO están marcados como completos en el trace
-        # (evita duplicados por reprocesar meses interrumpidos a medias)
+        # Drop rows for months NOT marked complete in the trace
+        # (avoids duplicates from reprocessing partially interrupted months)
         mask_complete = existing_df.apply(lambda r: (r['repo'], r['ym']) in done_months, axis=1)
         kept_df = existing_df[mask_complete].drop(columns=['ym'])
         dropped = len(existing_df) - len(kept_df)
         all_data = kept_df.to_dict('records')
-        print(f"🔄 Reanudando: {len(all_data)} commits válidos de meses completos "
-              f"({dropped} descartados de meses incompletos).")
+        print(f"Resuming: {len(all_data)} valid commits from completed months "
+              f"({dropped} dropped from incomplete months).")
     else:
         all_data = []
 
     for repo in REPOSITORIES:
-        print(f"\n📦 Repositorio: {repo}")
+        print(f"\nRepository: {repo}")
 
         for m_start, m_end in month_ranges(WINDOW_START, WINDOW_END):
             mes_str = m_start.strftime('%Y-%m')
             if (repo, mes_str) in done_months:
-                print(f"   {mes_str}: ya completado previamente, se salta.")
+                print(f"   {mes_str}: already completed, skipping.")
                 continue
             since = m_start.strftime('%Y-%m-%dT00:00:00Z')
             until = m_end.strftime('%Y-%m-%dT00:00:00Z')
@@ -112,7 +123,7 @@ def extract_commits():
                 if check_rate_limit(res_list):
                     continue
                 if res_list.status_code != 200:
-                    print(f"   ❌ Error {res_list.status_code} en {repo} pág {page}: {res_list.text[:150]}")
+                    print(f"   Error {res_list.status_code} on {repo} page {page}: {res_list.text[:150]}")
                     break
 
                 commits = res_list.json()
@@ -185,10 +196,10 @@ def extract_commits():
                 'muestreados': len(sample),
                 'incluidos_final': included,
             })
-            print(f"   {m_start.strftime('%Y-%m')}: {included} incluidos "
-                  f"(validos: {len(candidates)}, bots: {bots_excluded}, junk: {junk_excluded})")
+            print(f"   {m_start.strftime('%Y-%m')}: {included} included "
+                  f"(valid: {len(candidates)}, bots: {bots_excluded}, junk: {junk_excluded})")
 
-            # Guardado incremental por mes: si se corta por rate-limit, no se pierde lo ya confirmado
+            # Incremental save per month: a rate-limit cutoff doesn't lose confirmed progress
             pd.DataFrame(trace_rows).to_csv(TRACE_FILE, index=False)
             pd.DataFrame(all_data).to_parquet(OUTPUT_FILE, index=False)
 
@@ -196,9 +207,10 @@ def extract_commits():
         df = pd.DataFrame(all_data)
         df.to_parquet(OUTPUT_FILE, index=False)
         pd.DataFrame(trace_rows).to_csv(TRACE_FILE, index=False)
-        print(f"\n🏁 Finalizado: {len(df)} commits en {OUTPUT_FILE}")
+        print(f"\nDone: {len(df)} commits in {OUTPUT_FILE}")
     else:
-        print("\n⚠️ No se extrajeron datos.")
+        print("\nNo data extracted.")
+
 
 if __name__ == "__main__":
     extract_commits()

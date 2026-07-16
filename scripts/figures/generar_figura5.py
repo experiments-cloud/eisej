@@ -1,6 +1,6 @@
 """
-Genera la Figura 5: matrices de confusión agregadas (out-of-fold) para RF y LSTM.
-Salida: figura5_matrices_confusion.png (300 dpi)
+Generates Figure 5: aggregated (out-of-fold) confusion matrices for RF and LSTM.
+Output: figura5_matrices_confusion.png (300 dpi)
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -33,6 +33,6 @@ for ax, cm, title in zip(axes, [cm_rf, cm_lstm], ['Random Forest', 'LSTM']):
 
 plt.tight_layout()
 plt.savefig('figura5_matrices_confusion.png', dpi=300, bbox_inches='tight')
-print("Guardado: figura5_matrices_confusion.png")
+print("Saved: figura5_matrices_confusion.png")
 print("\nRF confusion matrix:\n", cm_rf)
 print("\nLSTM confusion matrix:\n", cm_lstm)

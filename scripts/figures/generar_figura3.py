@@ -1,8 +1,8 @@
 """
-Genera la Figura 3: scatter plot anomaly_rate x temporal_entropy_norm,
-coloreado por clasificación (rasgo estable / estado emergente / mixto),
-con líneas de mediana marcando los 4 cuadrantes.
-Salida: figura3_rasgo_estado.png (300 dpi)
+Generates Figure 3: scatter plot of anomaly_rate x temporal_entropy_norm,
+colored by classification (stable trait / emergent state / mixed),
+with median lines marking the 4 quadrants.
+Output: figura3_rasgo_estado.png (300 dpi)
 """
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -42,4 +42,4 @@ ax.tick_params(labelsize=8)
 
 plt.tight_layout()
 plt.savefig('figura3_rasgo_estado.png', dpi=300, bbox_inches='tight')
-print("Guardado: figura3_rasgo_estado.png")
+print("Saved: figura3_rasgo_estado.png")

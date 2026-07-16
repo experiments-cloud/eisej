@@ -1,10 +1,21 @@
 """
-Fase 5: Modelado predictivo oracle
-Input: secuencia cruda de 5 commits (ventana W_t)
-Target: estado (Isolation Forest) de la SIGUIENTE ventana W_{t+1}
-Split: GroupShuffleSplit por autor (85/15) -> ningún autor aparece en ambos splits
-Modelos: LSTM (temporal) vs Random Forest (estático, secuencia aplanada)
-Validación: McNemar's test sobre las clasificaciones del hold-out
+SUPERSEDED / NOT part of the final pipeline -- kept for transparency.
+
+First version of oracle modeling using a single GroupShuffleSplit (85/15)
+instead of cross-validation. Replaced by 05_oracle_modeling_cv.py (5-fold
+GroupKFold), because a single random split is more sensitive to which
+specific authors land in the held-out set -- this became visible once
+recall variability across folds was examined (Section 4.3 of the paper),
+which a single split cannot reveal on its own. Also, this version did not
+fix the PyTorch random seed, so LSTM results were not reproducible run to
+run (a further reason it was replaced).
+
+Phase 5 (original): oracle predictive modeling
+Input: raw sequence of 5 commits (window W_t)
+Target: state (Isolation Forest) of the NEXT window W_{t+1}
+Split: GroupShuffleSplit by author (85/15) -> no author appears in both splits
+Models: LSTM (temporal) vs Random Forest (static, flattened sequence)
+Validation: McNemar's test over the hold-out classifications
 """
 import pandas as pd
 import numpy as np
@@ -19,19 +30,19 @@ from statsmodels.stats.contingency_tables import mcnemar
 SEQ_LEN = 5
 COMMIT_FEATURES = ['deletion_ratio', 'hours_from_own_baseline', 'is_weekend_num', 'log_churn', 'log_iat']
 
-df = pd.read_parquet('data/github_features_final.parquet')
-win_df = pd.read_parquet('data/github_windows_groundtruth.parquet')
+df = pd.read_parquet('data/processed/github_features_final.parquet')
+win_df = pd.read_parquet('data/processed/github_windows_groundtruth.parquet')
 
 df['is_weekend_num'] = df['is_weekend'].astype(int)
 df['log_churn'] = np.log1p(df['total_churn'])
 df['log_iat'] = np.log1p(df['iat_hours'].fillna(df.groupby('author_id')['iat_hours'].transform('median')).fillna(0))
 df = df.sort_values(['author_id', 'commit_seq_number']).reset_index(drop=True)
 
-# Diccionario rápido de etiquetas por (author_id, window_end_seq)
+# Quick label lookup by (author_id, window_end_seq)
 label_lookup = win_df.set_index(['author_id', 'window_end_seq'])['iso_anomaly'].to_dict()
 
 # ==========================================
-# CONSTRUCCIÓN DE PARES ORACLE: (secuencia cruda de W_t, etiqueta de W_{t+1})
+# BUILD ORACLE PAIRS: (raw sequence of W_t, label of W_{t+1})
 # ==========================================
 X_list, y_list, group_list = [], [], []
 
@@ -43,8 +54,8 @@ for author_id, grp in df.groupby('author_id'):
     feat_matrix = grp[COMMIT_FEATURES].values  # (n, num_features)
     seq_numbers = grp['commit_seq_number'].values
 
-    # ventana W_t termina en la posición idx (0-indexed: start..start+SEQ_LEN-1)
-    for start in range(0, n - SEQ_LEN):  # deja al menos 1 commit extra para W_{t+1}
+    # window W_t ends at position idx (0-indexed: start..start+SEQ_LEN-1)
+    for start in range(0, n - SEQ_LEN):  # leaves at least 1 extra commit for W_{t+1}
         window_end_idx = start + SEQ_LEN - 1
         next_window_end_idx = window_end_idx + 1
         if next_window_end_idx >= n:
@@ -65,12 +76,12 @@ X = np.array(X_list)               # (N, 5, num_features)
 y = np.array(y_list)                # (N,)
 groups = np.array(group_list)
 
-print(f"Total secuencias oracle construidas: {len(X)}")
-print(f"Autores representados: {len(set(groups))}")
-print(f"Balance de clases: {y.mean()*100:.1f}% positivas (ventana siguiente anómala)")
+print(f"Total oracle sequences built: {len(X)}")
+print(f"Authors represented: {len(set(groups))}")
+print(f"Class balance: {y.mean()*100:.1f}% positive (next window anomalous)")
 
 # ==========================================
-# SPLIT POR AUTOR (GroupShuffleSplit, evita fuga de datos)
+# SPLIT BY AUTHOR (GroupShuffleSplit, avoids data leakage)
 # ==========================================
 gss = GroupShuffleSplit(n_splits=1, test_size=0.15, random_state=42)
 train_idx, test_idx = next(gss.split(X, y, groups))
@@ -80,13 +91,13 @@ y_train, y_test = y[train_idx], y[test_idx]
 groups_train, groups_test = groups[train_idx], groups[test_idx]
 
 overlap = set(groups_train) & set(groups_test)
-print(f"\nAutores en train: {len(set(groups_train))} | Autores en test: {len(set(groups_test))}")
-print(f"Overlap de autores entre train/test (debe ser 0): {len(overlap)}")
-print(f"Train: {len(X_train)} secuencias ({y_train.mean()*100:.1f}% positivas)")
-print(f"Test:  {len(X_test)} secuencias ({y_test.mean()*100:.1f}% positivas)")
+print(f"\nAuthors in train: {len(set(groups_train))} | Authors in test: {len(set(groups_test))}")
+print(f"Author overlap between train/test (should be 0): {len(overlap)}")
+print(f"Train: {len(X_train)} sequences ({y_train.mean()*100:.1f}% positive)")
+print(f"Test:  {len(X_test)} sequences ({y_test.mean()*100:.1f}% positive)")
 
 # ==========================================
-# ESCALADO (fit SOLO en train, evita fuga de información)
+# SCALING (fit ONLY on train, avoids information leakage)
 # ==========================================
 n_feat = X_train.shape[2]
 scaler = StandardScaler()
@@ -103,9 +114,9 @@ X_train_s = scale_seq(X_train)
 X_test_s = scale_seq(X_test)
 
 # ==========================================
-# MODELO 1: RANDOM FOREST (estático, secuencia aplanada)
+# MODEL 1: RANDOM FOREST (static, flattened sequence)
 # ==========================================
-print("\n=== Entrenando Random Forest ===")
+print("\n=== Training Random Forest ===")
 X_train_flat = X_train_s.reshape(len(X_train_s), -1)
 X_test_flat = X_test_s.reshape(len(X_test_s), -1)
 
@@ -116,12 +127,12 @@ rf_preds = rf.predict(X_test_flat)
 rf_acc = accuracy_score(y_test, rf_preds)
 rf_prec, rf_rec, rf_f1, _ = precision_recall_fscore_support(y_test, rf_preds, average='binary', zero_division=0)
 print(f"RF -> Accuracy: {rf_acc:.4f} | Precision: {rf_prec:.4f} | Recall: {rf_rec:.4f} | F1: {rf_f1:.4f}")
-print("Matriz de confusión RF:\n", confusion_matrix(y_test, rf_preds))
+print("RF confusion matrix:\n", confusion_matrix(y_test, rf_preds))
 
 # ==========================================
-# MODELO 2: LSTM (temporal)
+# MODEL 2: LSTM (temporal)
 # ==========================================
-print("\n=== Entrenando LSTM ===")
+print("\n=== Training LSTM ===")
 
 class OracleLSTM(nn.Module):
     def __init__(self, input_size, hidden_size=32, num_layers=2, dropout=0.4):
@@ -143,7 +154,7 @@ y_train_t = torch.tensor(y_train, dtype=torch.long).to(device)
 X_test_t = torch.tensor(X_test_s, dtype=torch.float32).to(device)
 y_test_t = torch.tensor(y_test, dtype=torch.long).to(device)
 
-# Pesos de clase dinámicos (igual que Random Forest balanced)
+# Dynamic class weights (same criterion as Random Forest's 'balanced')
 class_counts = np.bincount(y_train)
 class_weights = torch.tensor(len(y_train) / (2.0 * class_counts), dtype=torch.float32).to(device)
 criterion = nn.CrossEntropyLoss(weight=class_weights)
@@ -178,7 +189,7 @@ with torch.no_grad():
 lstm_acc = accuracy_score(y_test, lstm_preds)
 lstm_prec, lstm_rec, lstm_f1, _ = precision_recall_fscore_support(y_test, lstm_preds, average='binary', zero_division=0)
 print(f"\nLSTM -> Accuracy: {lstm_acc:.4f} | Precision: {lstm_prec:.4f} | Recall: {lstm_rec:.4f} | F1: {lstm_f1:.4f}")
-print("Matriz de confusión LSTM:\n", confusion_matrix(y_test, lstm_preds))
+print("LSTM confusion matrix:\n", confusion_matrix(y_test, lstm_preds))
 
 # ==========================================
 # McNEMAR'S TEST
@@ -193,14 +204,14 @@ only_lstm = np.sum(~rf_correct & lstm_correct)
 both_wrong = np.sum(~rf_correct & ~lstm_correct)
 
 table = [[both_correct, only_rf], [only_lstm, both_wrong]]
-print("Tabla de contingencia [[ambos_correctos, solo_RF], [solo_LSTM, ambos_incorrectos]]:")
+print("Contingency table [[both_correct, only_RF], [only_LSTM, both_wrong]]:")
 print(table)
 
 result = mcnemar(table, exact=False, correction=True)
 print(f"\nMcNemar statistic: {result.statistic:.4f}, p-value: {result.pvalue:.4f}")
 
 # ==========================================
-# GUARDADO
+# SAVE
 # ==========================================
 summary = pd.DataFrame({
     'modelo': ['Random Forest', 'LSTM'],
@@ -209,7 +220,7 @@ summary = pd.DataFrame({
     'recall': [rf_rec, lstm_rec],
     'f1': [rf_f1, lstm_f1],
 })
-summary.to_csv('data/fase5_resultados_modelos.csv', index=False)
+summary.to_csv('data/processed/fase5_resultados_modelos_SUPERSEDED.csv', index=False)
 
 trace5 = {
     'n_secuencias_totales': len(X),
@@ -221,5 +232,6 @@ trace5 = {
     'lstm_accuracy': lstm_acc, 'lstm_f1': lstm_f1,
     'mcnemar_statistic': result.statistic, 'mcnemar_pvalue': result.pvalue,
 }
-pd.Series(trace5).to_csv('data/fase5_trace.csv', header=['valor'])
-print("\n✅ Guardado: fase5_resultados_modelos.csv, fase5_trace.csv")
+pd.Series(trace5).to_csv('data/processed/fase5_trace_SUPERSEDED.csv', header=['valor'])
+print("\nSaved (superseded output, not used downstream): "
+      "fase5_resultados_modelos_SUPERSEDED.csv, fase5_trace_SUPERSEDED.csv")

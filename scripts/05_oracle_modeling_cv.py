@@ -1,9 +1,13 @@
 """
-Fase 5 (v2): Validación cruzada por autor
-5-fold GroupKFold (ningún autor aparece en train y test del mismo fold)
-Reporta accuracy/F1 con media ± desviación estándar entre folds,
-y McNemar's test sobre las predicciones out-of-fold agrupadas (cada muestra evaluada
-exactamente una vez, en el fold donde fue hold-out).
+Phase 5 (final): author-grouped cross-validation
+5-fold GroupKFold (no author appears in both train and test of the same fold)
+Reports accuracy/F1 as mean +/- standard deviation across folds, and
+McNemar's test over the pooled out-of-fold predictions (each sample
+evaluated exactly once, in the fold where it was held out).
+
+Note: random seeds are fixed for NumPy, scikit-learn, and PyTorch. Without
+this, LSTM training is not deterministic across runs (weight initialization
+and minibatch shuffling) -- see Section 4.3 of the paper.
 """
 import pandas as pd
 import numpy as np
@@ -22,8 +26,8 @@ SEQ_LEN = 5
 N_FOLDS = 5
 COMMIT_FEATURES = ['deletion_ratio', 'hours_from_own_baseline', 'is_weekend_num', 'log_churn', 'log_iat']
 
-df = pd.read_parquet('data/github_features_final.parquet')
-win_df = pd.read_parquet('data/github_windows_groundtruth.parquet')
+df = pd.read_parquet('data/processed/github_features_final.parquet')
+win_df = pd.read_parquet('data/processed/github_windows_groundtruth.parquet')
 
 df['is_weekend_num'] = df['is_weekend'].astype(int)
 df['log_churn'] = np.log1p(df['total_churn'])
@@ -32,6 +36,9 @@ df = df.sort_values(['author_id', 'commit_seq_number']).reset_index(drop=True)
 
 label_lookup = win_df.set_index(['author_id', 'window_end_seq'])['iso_anomaly'].to_dict()
 
+# ==========================================
+# BUILD ORACLE PAIRS: (raw sequence of W_t, label of W_{t+1})
+# ==========================================
 X_list, y_list, group_list = [], [], []
 for author_id, grp in df.groupby('author_id'):
     grp = grp.reset_index(drop=True)
@@ -55,7 +62,8 @@ for author_id, grp in df.groupby('author_id'):
 X = np.array(X_list)
 y = np.array(y_list)
 groups = np.array(group_list)
-print(f"Total secuencias oracle: {len(X)} | Autores: {len(set(groups))} | Balance positivo: {y.mean()*100:.1f}%")
+print(f"Total oracle sequences: {len(X)} | Authors: {len(set(groups))} | Positive balance: {y.mean()*100:.1f}%")
+
 
 class OracleLSTM(nn.Module):
     def __init__(self, input_size, hidden_size=32, num_layers=2, dropout=0.4):
@@ -66,6 +74,7 @@ class OracleLSTM(nn.Module):
     def forward(self, x):
         out, _ = self.lstm(x)
         return self.fc(out[:, -1, :])
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -81,8 +90,9 @@ for fold, (train_idx, test_idx) in enumerate(gkf.split(X, y, groups)):
     X_train, X_test = X[train_idx], X[test_idx]
     y_train, y_test = y[train_idx], y[test_idx]
 
-    assert len(set(groups[train_idx]) & set(groups[test_idx])) == 0, "Fuga de autores entre folds!"
+    assert len(set(groups[train_idx]) & set(groups[test_idx])) == 0, "Author leakage between folds!"
 
+    # Scaling fit ONLY on train, to avoid leakage into test
     scaler = StandardScaler()
     scaler.fit(X_train.reshape(-1, n_feat))
     X_train_s = scaler.transform(X_train.reshape(-1, n_feat)).reshape(X_train.shape)
@@ -137,19 +147,19 @@ for fold, (train_idx, test_idx) in enumerate(gkf.split(X, y, groups)):
     })
 
 results_df = pd.DataFrame(fold_results)
-print("\n=== RESULTADOS POR FOLD ===")
+print("\n=== RESULTS PER FOLD ===")
 print(results_df.to_string(index=False))
 
-print("\n=== MEDIA ± DESVIACIÓN ESTÁNDAR ENTRE FOLDS ===")
+print("\n=== MEAN +/- STANDARD DEVIATION ACROSS FOLDS ===")
 for model_name in ['rf', 'lstm']:
     for metric in ['acc', 'precision', 'recall', 'f1']:
         col = f'{model_name}_{metric}'
-        print(f"  {col}: {results_df[col].mean():.4f} ± {results_df[col].std():.4f}")
+        print(f"  {col}: {results_df[col].mean():.4f} +/- {results_df[col].std():.4f}")
 
 # ==========================================
-# McNEMAR SOBRE PREDICCIONES OUT-OF-FOLD (cada muestra evaluada 1 sola vez)
+# McNEMAR OVER POOLED OUT-OF-FOLD PREDICTIONS (each sample evaluated exactly once)
 # ==========================================
-assert (oof_rf_preds >= 0).all() and (oof_lstm_preds >= 0).all(), "Faltan predicciones out-of-fold"
+assert (oof_rf_preds >= 0).all() and (oof_lstm_preds >= 0).all(), "Missing out-of-fold predictions"
 
 rf_correct = (oof_rf_preds == y)
 lstm_correct = (oof_lstm_preds == y)
@@ -159,15 +169,15 @@ only_lstm = np.sum(~rf_correct & lstm_correct)
 neither = np.sum(~rf_correct & ~lstm_correct)
 
 table = [[both, only_rf], [only_lstm, neither]]
-print(f"\n=== McNemar sobre predicciones out-of-fold agrupadas (n={len(y)}) ===")
-print("Tabla:", table)
+print(f"\n=== McNemar over pooled out-of-fold predictions (n={len(y)}) ===")
+print("Table:", table)
 mc = mcnemar(table, exact=False, correction=True)
 print(f"McNemar statistic: {mc.statistic:.4f}, p-value: {mc.pvalue:.6f}")
 
-print(f"\nOOF Accuracy global -> RF: {accuracy_score(y, oof_rf_preds):.4f} | LSTM: {accuracy_score(y, oof_lstm_preds):.4f}")
+print(f"\nGlobal OOF accuracy -> RF: {accuracy_score(y, oof_rf_preds):.4f} | LSTM: {accuracy_score(y, oof_lstm_preds):.4f}")
 
-results_df.to_csv('data/fase5_cv_resultados.csv', index=False)
-np.savez('data/fase5_oof_predictions.npz',
+results_df.to_csv('data/processed/fase5_cv_resultados.csv', index=False)
+np.savez('data/processed/fase5_oof_predictions.npz',
          y_true=y, oof_rf=oof_rf_preds, oof_lstm=oof_lstm_preds)
 trace5 = {
     'n_folds': N_FOLDS,
@@ -178,5 +188,5 @@ trace5 = {
     'mcnemar_oof_statistic': mc.statistic, 'mcnemar_oof_pvalue': mc.pvalue,
     'oof_accuracy_rf': accuracy_score(y, oof_rf_preds), 'oof_accuracy_lstm': accuracy_score(y, oof_lstm_preds),
 }
-pd.Series(trace5).to_csv('data/fase5_cv_trace.csv', header=['valor'])
-print("\n✅ Guardado: fase5_cv_resultados.csv, fase5_cv_trace.csv")
+pd.Series(trace5).to_csv('data/processed/fase5_cv_trace.csv', header=['valor'])
+print("\nSaved: fase5_cv_resultados.csv, fase5_cv_trace.csv")

@@ -1,6 +1,6 @@
 """
-Genera la Figura 1: diagrama de flujo del pipeline metodológico completo.
-Salida: figura1_pipeline.png (300 dpi, apto para \\includegraphics en LaTeX)
+Generates Figure 1: flow diagram of the complete methodological pipeline.
+Output: figura1_pipeline.png (300 dpi, suitable for \\includegraphics in LaTeX)
 """
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
@@ -47,4 +47,4 @@ for i, (title, detail) in enumerate(STAGES):
 
 plt.tight_layout()
 plt.savefig("figura1_pipeline.png", dpi=300, bbox_inches="tight")
-print("Guardado: figura1_pipeline.png")
+print("Saved: figura1_pipeline.png")

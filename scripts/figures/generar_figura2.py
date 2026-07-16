@@ -1,7 +1,7 @@
 """
-Genera la Figura 2: distribución de los tres índices compuestos,
-comparando el grupo anómalo (Isolation Forest) contra el grupo normal.
-Salida: figura2_perfil_cluster.png (300 dpi)
+Generates Figure 2: distribution of the three composite indices,
+comparing the anomalous group (Isolation Forest) against the normal group.
+Output: figura2_perfil_cluster.png (300 dpi)
 """
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -44,11 +44,11 @@ axes[0].set_ylabel('Standardized value (z-score)', fontsize=9)
 
 plt.tight_layout()
 plt.savefig('figura2_perfil_cluster.png', dpi=300, bbox_inches='tight')
-print("Guardado: figura2_perfil_cluster.png")
+print("Saved: figura2_perfil_cluster.png")
 
-# Estadísticas de apoyo para el pie de figura / texto
-print("\nMedianas por grupo:")
+# Supporting statistics for the figure caption / text
+print("\nMedians by group:")
 for col, label in FEATURES.items():
     med_n = win_df.loc[~win_df['iso_anomaly'], col].median()
     med_a = win_df.loc[win_df['iso_anomaly'], col].median()
-    print(f"  {col}: normal={med_n:.3f}  anómalo={med_a:.3f}")
+    print(f"  {col}: normal={med_n:.3f}  anomalous={med_a:.3f}")

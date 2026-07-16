@@ -1,7 +1,14 @@
 """
-Fase 3 (v2): Ground Truth no supervisado a nivel de VENTANA (no commit individual)
-Unidad de análisis: ventanas deslizantes de 5 commits consecutivos por autor
-(alineado con el diseño oracle SEQ_LEN=5 que se usará en Fase 5)
+Phase 3 (window-level): builds 5-commit sliding windows per author and runs
+an initial k=2 k-means clustering pass over them. This clustering result is
+NOT the final ground truth used in the paper -- see 03b, which compares
+this k-means result against Isolation Forest and a Gaussian Mixture Model
+and selects Isolation Forest as the final method (Section 3.4 of the paper).
+This script is still a required step, since 03b consumes the windows built
+here.
+
+Analysis unit: sliding windows of 5 consecutive commits per author
+(aligned with the oracle design, SEQ_LEN=5, used later in Phase 5).
 """
 import pandas as pd
 import numpy as np
@@ -11,11 +18,11 @@ from sklearn.metrics import silhouette_score
 from scipy.stats import mannwhitneyu
 
 SEQ_LEN = 5
-df = pd.read_parquet('data/github_features_final.parquet')
+df = pd.read_parquet('data/processed/github_features_final.parquet')
 df = df.sort_values(['author_id', 'commit_seq_number']).reset_index(drop=True)
 
 # ==========================================
-# CONSTRUCCIÓN DE VENTANAS DESLIZANTES (step=1) POR AUTOR
+# BUILD SLIDING WINDOWS (step=1) PER AUTHOR
 # ==========================================
 windows = []
 for author_id, grp in df.groupby('author_id'):
@@ -43,12 +50,12 @@ for author_id, grp in df.groupby('author_id'):
 
 win_df = pd.DataFrame(windows)
 win_df['iat_std'] = win_df['iat_std'].fillna(0)
-print(f"Total ventanas construidas: {len(win_df)}")
-print(f"Autores representados: {win_df['author_id'].nunique()}")
-print(f"Ventanas promedio por autor: {len(win_df) / win_df['author_id'].nunique():.1f}")
+print(f"Total windows built: {len(win_df)}")
+print(f"Authors represented: {win_df['author_id'].nunique()}")
+print(f"Average windows per author: {len(win_df) / win_df['author_id'].nunique():.1f}")
 
 # ==========================================
-# FEATURE SPACE: 2 índices teóricos (mismo criterio que antes: evitar dominancia)
+# FEATURE SPACE: 2 theoretical indices (same criterion as before: avoid dominance)
 # ==========================================
 z_del = StandardScaler().fit_transform(win_df[['deletion_ratio_mean']])[:, 0]
 z_churn = StandardScaler().fit_transform(np.log1p(win_df[['churn_mean']]))[:, 0]
@@ -67,9 +74,9 @@ X = win_df[FEATURES].values
 X_scaled = StandardScaler().fit_transform(X)
 
 # ==========================================
-# SELECCIÓN DE k
+# k SELECTION
 # ==========================================
-print("\n=== Selección de k (silhouette, k=2..6) ===")
+print("\n=== k selection (silhouette, k=2..6) ===")
 sil_scores = {}
 for k in range(2, 7):
     km = KMeans(n_clusters=k, random_state=42, n_init=10)
@@ -79,54 +86,54 @@ for k in range(2, 7):
     print(f"k={k}: silhouette={sil:.4f}")
 
 # ==========================================
-# CLUSTERING FINAL k=2
+# FINAL k=2 CLUSTERING (exploratory pass; not the paper's final ground truth)
 # ==========================================
 km2 = KMeans(n_clusters=2, random_state=42, n_init=10)
 win_df['cluster'] = km2.fit_predict(X_scaled)
 cluster_sizes = win_df['cluster'].value_counts(normalize=True).sort_index()
-print("\n=== Distribución de clusters (k=2, nivel ventana) ===")
+print("\n=== Cluster distribution (k=2, window level) ===")
 print(cluster_sizes)
 
 profile_cols = ['deletion_ratio_mean', 'churn_mean', 'boundary_dissolution_rate',
                  'weekend_rate', 'iat_mean', 'iat_std',
                  'operational_friction_index', 'boundary_dissolution_index', 'erratic_pacing_index']
-print("\n=== Perfil promedio por cluster ===")
+print("\n=== Average profile per cluster ===")
 print(win_df.groupby('cluster')[profile_cols].mean().T)
 
 minority_cluster = cluster_sizes.idxmin()
 win_df['is_anomalous'] = win_df['cluster'] == minority_cluster
-print(f"\nCluster anómalo: {minority_cluster} ({cluster_sizes[minority_cluster]*100:.1f}% de las ventanas)")
+print(f"\nAnomalous cluster: {minority_cluster} ({cluster_sizes[minority_cluster]*100:.1f}% of windows)")
 
 # ==========================================
-# VALIDACIÓN EXTERNA (Mann-Whitney U, variables no usadas en clustering)
+# EXTERNAL VALIDATION (Mann-Whitney U, variables not used in clustering)
 # ==========================================
-print("\n=== Validación externa ===")
+print("\n=== External validation ===")
 grp_anom = win_df[win_df['is_anomalous']]
 grp_healthy = win_df[~win_df['is_anomalous']]
 
 u_fix, p_fix = mannwhitneyu(grp_anom['is_fix_rate'], grp_healthy['is_fix_rate'], alternative='two-sided')
 u_revert, p_revert = mannwhitneyu(grp_anom['is_revert_rate'], grp_healthy['is_revert_rate'], alternative='two-sided')
 
-print(f"Defect Fix Rate  -> anómalo: {grp_anom['is_fix_rate'].mean():.4f}  |  sano: {grp_healthy['is_fix_rate'].mean():.4f}  |  Mann-Whitney p={p_fix:.6f}")
-print(f"Revert Rate      -> anómalo: {grp_anom['is_revert_rate'].mean():.4f}  |  sano: {grp_healthy['is_revert_rate'].mean():.4f}  |  Mann-Whitney p={p_revert:.6f}")
+print(f"Defect Fix Rate  -> anomalous: {grp_anom['is_fix_rate'].mean():.4f}  |  normal: {grp_healthy['is_fix_rate'].mean():.4f}  |  Mann-Whitney p={p_fix:.6f}")
+print(f"Revert Rate      -> anomalous: {grp_anom['is_revert_rate'].mean():.4f}  |  normal: {grp_healthy['is_revert_rate'].mean():.4f}  |  Mann-Whitney p={p_revert:.6f}")
 
 # ==========================================
 # SENSITIVITY ANALYSIS
 # ==========================================
-print("\n=== Sensitivity analysis (semillas) ===")
+print("\n=== Sensitivity analysis (random seeds) ===")
 seed_results = []
 for seed in [0, 1, 7, 42, 123, 2024, 99999]:
     km = KMeans(n_clusters=2, random_state=seed, n_init=10)
     labels = km.fit_predict(X_scaled)
     prop = min(np.mean(labels == 0), np.mean(labels == 1))
     seed_results.append(prop)
-    print(f"  seed={seed}: minoritario = {prop*100:.2f}%")
-print(f"  Media: {np.mean(seed_results)*100:.2f}%  |  Desv. estándar: {np.std(seed_results)*100:.2f}pp")
+    print(f"  seed={seed}: minority = {prop*100:.2f}%")
+print(f"  Mean: {np.mean(seed_results)*100:.2f}%  |  Std. dev.: {np.std(seed_results)*100:.2f}pp")
 
 # ==========================================
-# GUARDADO
+# SAVE
 # ==========================================
-win_df.to_parquet('data/github_windows_clustered.parquet', index=False)
+win_df.to_parquet('data/processed/github_windows_clustered.parquet', index=False)
 trace3 = {
     'total_ventanas': len(win_df),
     'autores_con_ventanas': win_df['author_id'].nunique(),
@@ -142,5 +149,5 @@ trace3 = {
     'sensitivity_seed_mean': np.mean(seed_results),
     'sensitivity_seed_std': np.std(seed_results),
 }
-pd.Series(trace3).to_csv('data/fase3_trace_windows.csv', header=['valor'])
-print("\n✅ Guardado: data/github_windows_clustered.parquet y data/fase3_trace_windows.csv")
+pd.Series(trace3).to_csv('data/processed/fase3_trace_windows.csv', header=['valor'])
+print("\nSaved: data/processed/github_windows_clustered.parquet and data/processed/fase3_trace_windows.csv")

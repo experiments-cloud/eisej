@@ -1,12 +1,16 @@
 """
 01_extract_5repos.py
-Extracción estratificada por mes de los 5 repositorios de alta presión
-corporativa/infraestructura crítica. Reanudable: si se corta a medias,
-volver a correr el mismo comando continúa donde quedó, sin duplicar datos.
+Month-stratified extraction of the 5 high-corporate-pressure /
+critical-infrastructure repositories. Resumable: if interrupted, running
+the same command again continues where it left off, without duplicating data.
 
 Repos: facebook/react, tensorflow/tensorflow, microsoft/vscode,
        torvalds/linux, bitcoin/bitcoin
-Ventana: 2025-01-01 a 2026-07-14, muestreo estratificado por mes calendario.
+Window: 2025-01-01 to 2026-07-14, stratified sampling by calendar month.
+
+Note: internal DataFrame/CSV column names (e.g. 'mes', 'candidatos_vistos',
+'excluidos_bot') are kept as originally produced, to stay consistent with
+the already-released data files in data/raw/.
 """
 import requests
 import pandas as pd
@@ -16,7 +20,7 @@ import re
 import random
 from datetime import datetime
 
-GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', 'TU_TOKEN_AQUI')
+GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', 'YOUR_TOKEN_HERE')
 
 REPOSITORIES = [
     'facebook/react',
@@ -51,7 +55,7 @@ def check_rate_limit(response):
         if int(response.headers['X-RateLimit-Remaining']) == 0:
             reset_time = int(response.headers['X-RateLimit-Reset'])
             sleep_time = max(0, reset_time - int(time.time())) + 10
-            print(f"\n[!] Limite de API alcanzado. Durmiendo {sleep_time / 60:.1f} min...")
+            print(f"\n[!] API rate limit reached. Sleeping {sleep_time / 60:.1f} min...")
             time.sleep(sleep_time)
             return True
     return False
@@ -80,6 +84,7 @@ def month_ranges(start, end):
 def extract_commits():
     os.makedirs('data/raw', exist_ok=True)
 
+    # --- Safe resume: skip months already fully processed ---
     if os.path.exists(TRACE_FILE):
         trace_rows = pd.read_csv(TRACE_FILE).to_dict('records')
         done_months = {(r['repo'], r['mes']) for r in trace_rows}
@@ -93,17 +98,17 @@ def extract_commits():
         mask_complete = existing_df.apply(lambda r: (r['repo'], r['ym']) in done_months, axis=1)
         kept_df = existing_df[mask_complete].drop(columns=['ym'])
         all_data = kept_df.to_dict('records')
-        print(f"Reanudando: {len(all_data)} commits validos de meses completos.")
+        print(f"Resuming: {len(all_data)} valid commits from completed months.")
     else:
         all_data = []
 
     for repo in REPOSITORIES:
-        print(f"\nRepositorio: {repo}")
+        print(f"\nRepository: {repo}")
 
         for m_start, m_end in month_ranges(WINDOW_START, WINDOW_END):
             mes_str = m_start.strftime('%Y-%m')
             if (repo, mes_str) in done_months:
-                print(f"   {mes_str}: ya completado, se salta.")
+                print(f"   {mes_str}: already completed, skipping.")
                 continue
 
             since = m_start.strftime('%Y-%m-%dT00:00:00Z')
@@ -114,6 +119,7 @@ def extract_commits():
             junk_excluded = 0
             page = 1
 
+            # --- Step 1: list candidates (cheap, list-only API calls) ---
             while len(candidates) < CANDIDATE_CAP_PER_MONTH:
                 url_list = (
                     f'https://api.github.com/repos/{repo}/commits'
@@ -154,12 +160,16 @@ def extract_commits():
                 if len(commits) < 100:
                     break
 
+            # --- Step 2: filter by real AUTHOR date within the global window ---
             candidates = [
                 c for c in candidates
                 if WINDOW_START <= datetime.strptime(c['date'][:19], '%Y-%m-%dT%H:%M:%S') <= WINDOW_END
             ]
+
+            # --- Step 3: random sample of the month ---
             sample = random.sample(candidates, min(TARGET_PER_REPO_MONTH, len(candidates)))
 
+            # --- Step 4: fetch detail (added/deleted lines) only for the sample ---
             included = 0
             for c in sample:
                 url_detail = f"https://api.github.com/repos/{repo}/commits/{c['sha']}"
@@ -189,13 +199,14 @@ def extract_commits():
                 'candidatos_validos': len(candidates), 'muestreados': len(sample),
                 'incluidos_final': included,
             })
-            print(f"   {mes_str}: {included} incluidos "
-                  f"(validos: {len(candidates)}, bots: {bots_excluded}, junk: {junk_excluded})")
+            print(f"   {mes_str}: {included} included "
+                  f"(valid: {len(candidates)}, bots: {bots_excluded}, junk: {junk_excluded})")
 
+            # Incremental save per month: a rate-limit cutoff doesn't lose progress
             pd.DataFrame(trace_rows).to_csv(TRACE_FILE, index=False)
             pd.DataFrame(all_data).to_parquet(OUTPUT_FILE, index=False)
 
-    print(f"\nFinalizado: {len(all_data)} commits en {OUTPUT_FILE}")
+    print(f"\nDone: {len(all_data)} commits in {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":
