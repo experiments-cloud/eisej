@@ -19,9 +19,9 @@ eisej/
 │   ├── 04_trait_state_stability.py             # Sec. 3.6, 4.2
 │   ├── 05_oracle_modeling_cv.py                # Sec. 3.7, 4.3
 │   └── exploratory_superseded/                 # Discarded methodological attempts,
-│                                                #   documented in the paper (Sec. 3.4, 3.7)
-│                                                #   as part of the correction process.
-│                                                #   NOT part of the final pipeline.
+│                                               #   documented in the paper (Sec. 3.4, 3.7)
+│                                               #   as part of the correction process.
+│                                               #   NOT part of the final pipeline.
 ├── data/
 │   ├── raw/                                    # Output of 01 + 01b
 │   └── processed/                              # Output of 02, 03, 03b, 04, 05
