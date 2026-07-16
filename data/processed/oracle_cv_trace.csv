@@ -1,4 +1,4 @@
-,valor
+,value
 n_folds,5.0
 rf_acc_mean,0.8697166729915831
 rf_acc_std,0.010697023364849182
