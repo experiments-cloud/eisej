@@ -28,7 +28,7 @@ eisej/
 └── requirements.txt
 ```
 
-## Execution order (reproduction from scratch)
+## Execution order
 
 ```bash
 pip install -r requirements.txt
